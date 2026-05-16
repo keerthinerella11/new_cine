@@ -3,14 +3,16 @@ import mongoose from "mongoose";
 import Favorite from "../models/Favorite.js";
 
 const router = express.Router();
+const inMemoryFavorites = [];
 
-// ✅ Ensure DB connection
+// ✅ Ensure DB connection or fallback to in-memory storage
 const ensureDatabaseConnected = (req, res, next) => {
   if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      error: "Database not connected",
-    });
+    console.warn("⚠️ Database not connected, using in-memory favorites fallback");
+    req.useInMemoryFallback = true;
+    return next();
   }
+  req.useInMemoryFallback = false;
   next();
 };
 
@@ -46,6 +48,12 @@ router.get("/", ensureDatabaseConnected, async (req, res) => {
 
     console.log("📥 Fetching favorites for:", user);
 
+    if (req.useInMemoryFallback) {
+      const fallbackFavorites = inMemoryFavorites.filter((fav) => fav.likedBy === user);
+      console.log("✅ Returning in-memory favorites", fallbackFavorites.length);
+      return res.status(200).json(fallbackFavorites);
+    }
+
     const favorites = await Favorite.find({
       likedBy: { $eq: user },
     });
@@ -76,6 +84,11 @@ router.get("/:user", ensureDatabaseConnected, async (req, res) => {
     }
 
     console.log("📥 Fetching favorites for:", user);
+
+    if (req.useInMemoryFallback) {
+      const fallbackFavorites = inMemoryFavorites.filter((fav) => fav.likedBy === user);
+      return res.status(200).json(fallbackFavorites);
+    }
 
     const favorites = await Favorite.find({
       likedBy: { $eq: user },
@@ -108,6 +121,18 @@ router.post("/", ensureDatabaseConnected, async (req, res) => {
 
     likedBy = String(likedBy).trim();
     rating = Number(rating) || 0;
+
+    if (req.useInMemoryFallback) {
+      const exists = inMemoryFavorites.some(
+        (fav) => fav.movieId === movieId && fav.likedBy === likedBy
+      );
+      if (exists) {
+        return res.status(200).json({ message: "Already in favorites" });
+      }
+      const newFavorite = { movieId, title, poster, rating, likedBy, createdAt: new Date() };
+      inMemoryFavorites.push(newFavorite);
+      return res.status(201).json({ message: "Added to favorites", favorite: newFavorite });
+    }
 
     const existing = await Favorite.findOne({ movieId, likedBy });
 
@@ -156,6 +181,17 @@ const deleteHandler = async (req, res) => {
       return res.status(400).json({
         error: "movieId and user required",
       });
+    }
+
+    if (req.useInMemoryFallback) {
+      const index = inMemoryFavorites.findIndex(
+        (fav) => fav.movieId === movieId && fav.likedBy === user
+      );
+      if (index === -1) {
+        return res.status(404).json({ message: "Favorite not found" });
+      }
+      inMemoryFavorites.splice(index, 1);
+      return res.status(200).json({ message: "Removed from favorites" });
     }
 
     const removed = await Favorite.findOneAndDelete({

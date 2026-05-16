@@ -28,7 +28,7 @@ console.log("✅ Review routes registered");
 // ✅ Check MongoDB URI
 console.log("MONGO_URI configured:", !!process.env.MONGO_URI);
 if (!process.env.MONGO_URI) {
-  console.error("❌ MONGO_URI is not set in environment variables!");
+  console.warn("⚠️ MONGO_URI is not set in environment variables. Running with in-memory fallback for favorites.");
 }
 
 // ✅ MongoDB Connection with Retry Logic
@@ -36,8 +36,8 @@ const connectDB = async (retries = 3) => {
   try {
     const mongoUri = process.env.MONGO_URI;
     if (!mongoUri) {
-      console.error("❌ MONGO_URI is not set in environment variables!");
-      throw new Error("Missing MONGO_URI");
+      console.warn("⚠️ No MongoDB URI found. The backend will run without persistent favorites/reviews storage.");
+      return null;
     }
 
     const conn = await mongoose.connect(mongoUri, {
@@ -53,8 +53,8 @@ const connectDB = async (retries = 3) => {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       return connectDB(retries - 1);
     }
-    console.error("❌ Could not connect to MongoDB after retries. Exiting process.");
-    process.exit(1);
+    console.warn("⚠️ Could not connect to MongoDB after retries. The backend will keep running using in-memory fallback.");
+    return null;
   }
 };
 

@@ -9,7 +9,9 @@ const API_KEY = import.meta.env.VITE_TMDB_KEY || "eeec6858ccc8ea28e5972fba3c3e55
 // ✅ Use backend URL from env (works for Render + local)
 const BACKEND_URL = import.meta.env.VITE_API_URL || "https://cinezone-project-main.onrender.com";
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
-const user = localStorage.getItem("userEmail") || "guest";
+
+// ✅ Helper function to get current user email from localStorage
+const getCurrentUserEmail = () => localStorage.getItem("userEmail") || "guest";
 
 function MovieDetails() {
   const { id } = useParams();
@@ -26,12 +28,15 @@ function MovieDetails() {
   const [reviews, setReviews] = useState([]);
   const [newReview, setNewReview] = useState({ rating: 5, comment: "" });
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState(null);
+  const [editedReview, setEditedReview] = useState({ rating: 5, comment: "" });
 
   // ✅ Fetch user's favorites
   useEffect(() => {
     const fetchFavorites = async () => {
       try {
-        const encodedUser = encodeURIComponent(user);
+        const userEmail = getCurrentUserEmail();
+        const encodedUser = encodeURIComponent(userEmail);
         const res = await fetch(`${BACKEND_URL}/api/favorites?user=${encodedUser}`);
         if (!res.ok) {
           console.warn(`Favorites API returned ${res.status}`);
@@ -60,7 +65,8 @@ function MovieDetails() {
     if (isFav) {
       setFavorites((prev) => prev.filter((id) => id !== movieToLike.id));
       try {
-        const encodedUser = encodeURIComponent(user);
+        const userEmail = getCurrentUserEmail();
+        const encodedUser = encodeURIComponent(userEmail);
         await fetch(`${BACKEND_URL}/api/favorites/${movieToLike.id}?user=${encodedUser}`, {
           method: "DELETE",
         });
@@ -79,7 +85,7 @@ function MovieDetails() {
             title: movieToLike.title,
             poster: movieToLike.poster_path,
             rating: movieToLike.vote_average,
-            likedBy: user,
+            likedBy: getCurrentUserEmail(),
           }),
         });
       } catch (err) {
@@ -124,7 +130,7 @@ function MovieDetails() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           movieId: movie.id,
-          userEmail: user,
+          userEmail: getCurrentUserEmail(),
           rating: newReview.rating,
           comment: newReview.comment,
         }),
@@ -146,6 +152,57 @@ function MovieDetails() {
     } catch (err) {
       console.error("Error submitting review:", err);
       alert("❌ Failed to submit review. Please try again.");
+    }
+  };
+
+  // ✅ Delete review
+  const deleteReview = async (reviewId, index) => {
+    if (window.confirm("Are you sure you want to delete this review?")) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/reviews/${reviewId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!res.ok) throw new Error("Failed to delete review");
+        setReviews(reviews.filter((_, i) => i !== index));
+        alert("✅ Review deleted successfully!");
+      } catch (err) {
+        console.error("Error deleting review:", err);
+        alert("❌ Failed to delete review. Please try again.");
+      }
+    }
+  };
+
+  // ✅ Update review
+  const updateReview = async (e, reviewId, index) => {
+    e.preventDefault();
+    if (!editedReview.comment.trim()) {
+      alert("Please write a review comment");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/reviews/${reviewId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating: editedReview.rating,
+          comment: editedReview.comment,
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to update review");
+      const updatedReviewData = await res.json();
+      const updatedReviews = [...reviews];
+      updatedReviews[index] = updatedReviewData.review || { ...reviews[index], rating: editedReview.rating, comment: editedReview.comment };
+      setReviews(updatedReviews);
+      setEditingReviewId(null);
+      setEditedReview({ rating: 5, comment: "" });
+      alert("✅ Review updated successfully!");
+    } catch (err) {
+      console.error("Error updating review:", err);
+      alert("❌ Failed to update review. Please try again.");
     }
   };
 
@@ -394,17 +451,122 @@ function MovieDetails() {
                 key={index}
                 style={{
                   border: "1px solid #ddd",
-                  padding: "10px",
-                  marginBottom: "10px",
-                  borderRadius: "5px",
-                  backgroundColor: "#fff",
+                  padding: "15px",
+                  marginBottom: "15px",
+                  borderRadius: "8px",
+                  backgroundColor: "#f0e8ff",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  color: "#000",
                 }}
               >
-                <p>
-                  <strong>{review.userEmail}</strong> - ⭐ {review.rating}/5
-                </p>
-                <p>{review.comment}</p>
-                <small>{new Date(review.createdAt).toLocaleDateString()}</small>
+                {editingReviewId === index ? (
+                  // Edit form
+                  <form onSubmit={(e) => updateReview(e, review._id, index)} style={{ marginBottom: "10px" }}>
+                    <label style={{ display: "block", marginBottom: "10px" }}>
+                      <strong>Rating:</strong>
+                      <select
+                        value={editedReview.rating}
+                        onChange={(e) => setEditedReview({ ...editedReview, rating: Number(e.target.value) })}
+                        style={{ marginLeft: "10px", padding: "5px" }}
+                      >
+                        {[1, 2, 3, 4, 5].map((r) => (
+                          <option key={r} value={r}>
+                            {r} Star{r > 1 ? "s" : ""} {"⭐".repeat(r)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ display: "block", marginBottom: "10px" }}>
+                      <strong>Your Review:</strong>
+                      <textarea
+                        value={editedReview.comment}
+                        onChange={(e) => setEditedReview({ ...editedReview, comment: e.target.value })}
+                        rows="3"
+                        style={{ width: "100%", marginTop: "5px", padding: "8px", fontFamily: "Arial", fontSize: "14px" }}
+                        required
+                      />
+                    </label>
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <button
+                        type="submit"
+                        style={{
+                          padding: "8px 16px",
+                          background: "#28a745",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "5px",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ✓ Save Changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingReviewId(null)}
+                        style={{
+                          padding: "8px 16px",
+                          background: "#6c757d",
+                          color: "white",
+                          border: "none",
+                          borderRadius: "5px",
+                          cursor: "pointer",
+                          fontSize: "14px",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        ✗ Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  // Display review
+                  <>
+                    <p>
+                      <strong>{review.userEmail}</strong> - ⭐ {review.rating}/5
+                    </p>
+                    <p>{review.comment}</p>
+                    <small>{new Date(review.createdAt).toLocaleDateString()}</small>
+                    {review.userEmail === getCurrentUserEmail() && (
+                      <div style={{ marginTop: "10px", display: "flex", gap: "10px" }}>
+                        <button
+                          onClick={() => {
+                            setEditingReviewId(index);
+                            setEditedReview({ rating: review.rating, comment: review.comment });
+                          }}
+                          style={{
+                            padding: "6px 12px",
+                            background: "#ffc107",
+                            color: "black",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => deleteReview(review._id, index)}
+                          style={{
+                            padding: "6px 12px",
+                            background: "#dc3545",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          🗑️ Delete
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             ))
           )}
