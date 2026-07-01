@@ -12,7 +12,7 @@ function Auth() {
   const [checkingEmail, setCheckingEmail] = useState(false);
 
   const navigate = useNavigate();
-  const API_BASE = "http://localhost:5000/api/users";
+  const API_BASE = `${(import.meta.env.VITE_API_URL || "https://cinezone-project-main.onrender.com").replace(/\/$/, "")}/api/users`;
 
 
   // ✅ Check Email Availability
